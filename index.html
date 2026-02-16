@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>McQueen: Stadium Pro</title>
+    <style>
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            /* High-end dark aesthetic for the UI */
+            background: #000; 
+            font-family: 'Orbitron', sans-serif; 
+        }
+        #ui-container {
+            position: absolute; top: 30px; left: 40px; pointer-events: none;
+            color: #fff; z-index: 10;
+        }
+        #ui { 
+            font-size: 56px; font-weight: 900; color: #ffffff; 
+            text-shadow: 0 0 20px rgba(255, 0, 0, 0.8); 
+            letter-spacing: 2px;
+        }
+        #hs-ui { 
+            font-size: 12px; color: #ffaa00; font-weight: 400;
+            letter-spacing: 3px; margin-top: 5px; text-transform: uppercase;
+        }
+        
+        #shop-btn {
+            position: absolute; top: 30px; right: 40px; 
+            padding: 10px 25px; background: rgba(255, 255, 255, 0.1); border: 1px solid #fff; 
+            color: #fff; cursor: pointer; font-family: 'Orbitron'; 
+            font-weight: 900; z-index: 20; border-radius: 2px;
+            transition: 0.3s; backdrop-filter: blur(5px);
+        }
+        #shop-btn:hover { background: #fff; color: #000; }
+
+        #shop-menu {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 70%; background: rgba(0, 0, 0, 0.9); border: 1px solid #ff0000;
+            display: none; grid-template-columns: 1fr 1fr 1fr; padding: 30px; z-index: 100;
+        }
+        .car-item { color: white; padding: 20px; border: 1px solid #333; margin: 10px; text-align: center; }
+        .buy-btn { background: #ff0000; color: #fff; border: none; padding: 12px; cursor: pointer; margin-top: 15px; width: 100%; font-family: 'Orbitron'; font-weight: 900; }
+
+        #gameOver {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: white; text-align: center; display: none;
+            background: rgba(0,0,0,0.95); padding: 60px; border-top: 5px solid #ff0000;
+            z-index: 100; cursor: pointer;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;900&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div id="ui-container">
+        <div id="ui">0000</div>
+        <div id="hs-ui">BANKED SCORE: 0</div>
+    </div>
+
+    <button id="shop-btn" onclick="toggleShop()">GARAGE</button>
+
+    <div id="shop-menu">
+        <div class="car-item">
+            <h3 style="color:#ff0000">ROOKIE</h3>
+            <button class="buy-btn" onclick="selectCar('rookie')" id="btn-rookie">EQUIP</button>
+        </div>
+        <div class="car-item">
+            <h3 style="color:#00d4ff">TURBO</h3>
+            <button id="btn-turbo" class="buy-btn" onclick="buyCar('turbo', 2000)">2000 HS</button>
+        </div>
+        <div class="car-item">
+            <h3 style="color:#ff0055">APEX</h3>
+            <button id="btn-speed" class="buy-btn" onclick="buyCar('speed', 5000)">5000 HS</button>
+        </div>
+        <button style="grid-column: span 3; background: transparent; color: #666; margin-top: 20px; border:none; cursor:pointer;" onclick="toggleShop()">CLOSE</button>
+    </div>
+
+    <div id="gameOver" onclick="location.reload()">
+        <h1 style="font-size: 48px;">DNF</h1>
+        <div id="finalScore" style="margin: 20px 0; font-size: 24px; color: #ffaa00;"></div>
+        <p>TAP TO TRY AGAIN</p>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/three@0.155.0/build/three.min.js"></script>
+
+    <script>
+        const scene = new THREE.Scene();
+        
+        // --- STADIUM BACKGROUND ---
+        const loader = new THREE.TextureLoader();
+        // Using the image you provided as a background
+        loader.load('https://m.media-amazon.com/images/I/71RAnS3mS9L._AC_SL1500_.jpg', function(texture) {
+            scene.background = texture;
+        });
+
+        // Soft fog to help the 3D track blend into the 2D background image
+        scene.fog = new THREE.Fog(0x99bbff, 50, 250);
+        
+        const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // --- DATA ---
+        let highScore = parseInt(localStorage.getItem('mcqueen_high_score')) || 0;
+        let ownedCars = JSON.parse(localStorage.getItem('mcqueen_owned_cars')) || ['rookie'];
+        let score = 0, speed = 1.0, isPaused = false, gameOver = false, currentCarType = 'rookie';
+
+        // --- TRACK ---
+        const trackGroup = new THREE.Group();
+        const roadGeo = new THREE.PlaneGeometry(30, 2000);
+        // Slightly reflective road to match stadium lighting
+        const roadMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.3, metalness: 0.2 });
+        const road = new THREE.Mesh(roadGeo, roadMat);
+        road.rotation.x = -Math.PI / 2;
+        trackGroup.add(road);
+
+        for (let i = 0; i < 150; i++) {
+            const kerbMat = new THREE.MeshStandardMaterial({ color: i % 2 === 0 ? 0xffffff : 0xff0000 });
+            const kL = new THREE.Mesh(new THREE.BoxGeometry(2, 0.2, 8), kerbMat);
+            kL.position.set(-15, 0.1, -i * 8);
+            const kR = kL.clone(); kR.position.x = 15;
+            trackGroup.add(kL, kR);
+        }
+        scene.add(trackGroup);
+
+        // --- F1 CAR ---
+        const carGroup = new THREE.Group();
+        function updateCarVisual(type) {
+            carGroup.clear();
+            let color = type === 'turbo' ? 0x00d4ff : (type === 'speed' ? 0xff0055 : 0xee0000);
+            const body = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 2.6), new THREE.MeshStandardMaterial({ color: color, metalness: 0.5 }));
+            const wing = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.1, 0.5), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+            wing.position.set(0, 0.5, 1.1);
+            carGroup.add(body, wing);
+        }
+        updateCarVisual('rookie');
+        carGroup.position.y = 0.4;
+        scene.add(carGroup);
+
+        // --- RINGS ---
+        const checkeredTex = (() => {
+            const canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = "white"; ctx.fillRect(0,0,128,128); ctx.fillStyle = "black";
+            ctx.fillRect(0,0,64,64); ctx.fillRect(64,64,64,64);
+            const tex = new THREE.CanvasTexture(canvas); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(12, 1);
+            return tex;
+        })();
+
+        let rings = [];
+        function createRing(z) {
+            const group = new THREE.Group();
+            const ring = new THREE.Mesh(
+                new THREE.TorusGeometry(5, 0.5, 16, 64),
+                new THREE.MeshStandardMaterial({ map: checkeredTex, emissive: 0xffffff, emissiveIntensity: 0.2 })
+            );
+            group.add(ring);
+            group.position.set(0, 4.5, z);
+            group.userData = { offset: Math.random() * 10, range: 9 };
+            scene.add(group);
+            rings.push(group);
+        }
+        for(let i=0; i<6; i++) createRing(-i * 120 - 120);
+
+        // --- SYSTEM ---
+        function toggleShop() { isPaused = !isPaused; document.getElementById('shop-menu').style.display = isPaused ? 'grid' : 'none'; updateUI(); }
+        function buyCar(type, cost) {
+            if (ownedCars.includes(type)) selectCar(type);
+            else if (highScore >= cost) { ownedCars.push(type); localStorage.setItem('mcqueen_owned_cars', JSON.stringify(ownedCars)); selectCar(type); }
+        }
+        function selectCar(type) {
+            currentCarType = type;
+            speed = type === 'speed' ? 2.5 : (type === 'turbo' ? 1.7 : 1.2);
+            updateCarVisual(type); updateUI(); if(isPaused) toggleShop();
+        }
+        function updateUI() {
+            document.getElementById('ui').innerText = score.toString().padStart(4, '0');
+            document.getElementById('hs-ui').innerText = "BANKED SCORE: " + highScore;
+            ownedCars.forEach(car => {
+                const btn = document.getElementById('btn-' + car);
+                if(btn) btn.innerText = (currentCarType === car) ? "EQUIPPED" : "SELECT";
+            });
+        }
+
+        // --- LIGHTING ---
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+        const light = new THREE.DirectionalLight(0xffffff, 1);
+        light.position.set(0, 20, 10);
+        scene.add(light);
+
+        let mouseX = 0;
+        window.addEventListener('mousemove', e => mouseX = (e.clientX / window.innerWidth) * 2 - 1);
+
+        function animate() {
+            if (gameOver || isPaused) { requestAnimationFrame(animate); return; }
+            requestAnimationFrame(animate);
+
+            const time = Date.now() * 0.002;
+            carGroup.position.x += (mouseX * 14 - carGroup.position.x) * 0.15;
+            carGroup.position.z -= speed;
+
+            camera.position.set(carGroup.position.x * 0.4, 5, carGroup.position.z + 12);
+            camera.lookAt(carGroup.position.x, 1.5, carGroup.position.z - 15);
+            
+            trackGroup.position.z = carGroup.position.z - (carGroup.position.z % 80);
+
+            rings.forEach(r => {
+                r.position.x = Math.sin(time + r.userData.offset) * r.userData.range;
+                
+                if (Math.abs(carGroup.position.z - r.position.z) < 1.8) {
+                    let dx = carGroup.position.x - r.position.x;
+                    let dy = carGroup.position.y - r.position.y;
+                    if (Math.sqrt(dx*dx + dy*dy) < 4.7) {
+                        score += 100; updateUI(); r.position.z -= 720;
+                    } else {
+                        gameOver = true;
+                        if (score > highScore) { highScore = score; localStorage.setItem('mcqueen_high_score', highScore); }
+                        document.getElementById('gameOver').style.display = 'block';
+                        document.getElementById('finalScore').innerText = "SCORE: " + score;
+                    }
+                }
+                if (r.position.z > carGroup.position.z + 20) r.position.z -= 720;
+            });
+
+            renderer.render(scene, camera);
+        }
+        updateUI();
+        animate();
+    </script>
+</body>
+</html>
